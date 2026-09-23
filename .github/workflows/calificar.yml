@@ -1,0 +1,104 @@
+name: Calificar práctica de contador
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  calificar:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Obtener código del estudiante
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Verificar archivo modificado
+        shell: bash
+        run: |
+          git diff --name-only \
+            "${{ github.event.pull_request.base.sha }}" \
+            "${{ github.event.pull_request.head.sha }}" \
+            > archivos-modificados.txt
+
+          echo "Archivos modificados:"
+          cat archivos-modificados.txt
+
+          if [ "$(cat archivos-modificados.txt)" = "hooks/useCounter.tsx" ]; then
+            echo "FILES_OK=true" >> "$GITHUB_ENV"
+          else
+            echo "FILES_OK=false" >> "$GITHUB_ENV"
+          fi
+
+      - name: Restaurar archivos confiables del docente
+        run: |
+          git checkout "${{ github.event.pull_request.base.sha }}" -- \
+            grader \
+            jest.grader.config.cjs \
+            package.json \
+            package-lock.json \
+            tsconfig.json
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Verificar TypeScript
+        shell: bash
+        run: |
+          if npm run typecheck; then
+            echo "TYPECHECK_OK=true" >> "$GITHUB_ENV"
+          else
+            echo "TYPECHECK_OK=false" >> "$GITHUB_ENV"
+          fi
+
+      - name: Ejecutar grader
+        shell: bash
+        run: |
+          if npm run test:grade -- --json --outputFile=resultado-jest.json; then
+            echo "JEST_OK=true" >> "$GITHUB_ENV"
+          else
+            echo "JEST_OK=false" >> "$GITHUB_ENV"
+          fi
+
+      - name: Generar reporte de calificación
+        if: always()
+        run: node grader/generar-reporte.mjs
+        env:
+          BRANCH_NAME: ${{ github.head_ref }}
+          TYPECHECK_OK: ${{ env.TYPECHECK_OK }}
+          JEST_OK: ${{ env.JEST_OK }}
+          FILES_OK: ${{ env.FILES_OK }}
+
+      - name: Guardar evidencia
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reporte-calificacion-pr-${{ github.event.pull_request.number }}
+          path: |
+            resultado-calificacion.md
+            resultado-calificacion.json
+            resultado-jest.json
+            archivos-modificados.txt
+          if-no-files-found: warn
+
+      - name: Definir resultado final
+        if: always()
+        shell: bash
+        run: |
+          if [ "${TYPECHECK_OK:-false}" != "true" ] || \
+             [ "${JEST_OK:-false}" != "true" ] || \
+             [ "${FILES_OK:-false}" != "true" ]; then
+            exit 1
+          fi

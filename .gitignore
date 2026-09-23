@@ -39,3 +39,9 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+#Archivos generados en Revisión
+resultado-jest.json
+resultado-calificacion.md
+resultado-calificacion.json
+archivos-modificados.txt
