@@ -12,8 +12,7 @@ export const useCounter = () => {
   };
 
   const resetCounter = () => {
-    // TODO:
-    // El contador debe volver a 0.
+    setCounter(0);
   };
 
   return {
